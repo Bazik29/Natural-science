@@ -15,7 +15,7 @@ def surface(data, file):
     ax = Axes3D(fig)
     ax.plot_surface(X2D, Y2D, Z)
     plt.subplots_adjust(wspace=0.5, hspace=0.6)
-    plt.savefig('{}.pdf'.format(file))
+    plt.savefig('{}.png'.format(file))
 
 
 data = pd.read_csv("result.txt", header=None, sep=' ')
