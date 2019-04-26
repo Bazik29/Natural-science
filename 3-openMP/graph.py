@@ -1,54 +1,58 @@
 import glob
-import math
 import os
 import shutil
 
-import imageio
+import matplotlib.animation as animation
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+from matplotlib import cm
 from mpl_toolkits.mplot3d import Axes3D
 
 
-def surface(data, file, time):
-    Z = np.array(data)
-    X = np.arange(0, 1, 1.0 / Z.shape[1])
-    Y = np.arange(0, 1, 1.0 / Z.shape[0])
-    X2D, Y2D = np.meshgrid(X, Y)
-    fig = plt.figure()
-    ax = Axes3D(fig)
-    ax.plot_surface(X2D, Y2D, Z)
-    ax.set_xlabel('x')
-    ax.set_ylabel('y')
-    ax.set_zlabel('t')
-    ax.set_zlim(0, 1)
-    plt.title(str(time), pad=0.5)
-    plt.subplots_adjust(wspace=0.5, hspace=0.6)
-    plt.savefig('{}.png'.format(file))
-    plt.clf()
-    plt.close()
-
-
-if os.path.exists("plots"):
-    shutil.rmtree("plots")
-
-os.mkdir("plots")
-
-n = len(glob.glob("res/*.txt"))
-
-for i in range(0, n):
-    # p = i/(n-1) * 100
-    # print(f"{p}%")
-    with open('res/'+str(i)+'.txt') as f:
+def load(item):
+    with open(item) as f:
         time = f.readline()
-        data = pd.read_csv('res/'+str(i)+'.txt', sep=' ',
-                           skiprows=1, header=None)
-        surface(data, 'plots/'+str(i), time)
+    matr = pd.read_csv(item, sep=' ', skiprows=1, header=None)
+    return (np.array(matr), time)
 
-print("make gif...")
 
-n = len(glob.glob("plots/*.png"))
-images = []
-for i in range(0, n):
-    images.append(imageio.imread('plots/'+str(i)+'.png'))
-imageio.mimsave('plots/movie.gif', images, duration=0.1)
+def norm(item):
+    X, Y = np.arange(
+        0, 1, 1.0 / item.shape[1]), np.arange(0, 1, 1.0 / item.shape[0])
+    X, Y = np.meshgrid(X, Y)
+    return X, Y, item
+
+
+def update_plot(frm, data, plot):
+    plot[0].remove()
+    ax.set_title(str(data[frm][1]))
+    plot[0] = ax.plot_surface(*norm(data[frm][0]),  cmap=cm.Blues)
+
+
+if __name__ == "__main__":
+    if os.path.exists("plots"):
+        shutil.rmtree("plots")
+
+    os.mkdir("plots")
+
+    FOLDERNAME = 'res/{}.txt'
+    GIFPATH = 'plots/result.gif'
+    SHOWWINDOW = True
+    SAVEGIF = False
+    DELAY = 10  # default 200 as milliseconds
+
+    N = len(glob.glob(FOLDERNAME.format('*')))
+    data = list(map(load, [FOLDERNAME.format(x) for x in range(N)]))
+
+    fig=plt.figure()
+    ax=fig.add_subplot(111, projection='3d')
+    plot=[ax.plot_surface(*norm(data[0][0]), cmap=cm.Blues)]
+    ax.set_zlim(0, 0.5)
+    gif=animation.FuncAnimation(fig, update_plot, len(
+        data), fargs=(data, plot), interval=DELAY)
+
+    if SHOWWINDOW:
+        plt.show()
+    if SAVEGIF:
+        gif.save(GIFPATH, writer='pillow', fps=len(data))

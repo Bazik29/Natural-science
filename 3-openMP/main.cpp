@@ -1,49 +1,128 @@
+#include <omp.h>
 #include <iostream>
 #include <fstream>
 #include <string>
-#include <chrono>
-#include <experimental/filesystem>
 #include <unistd.h>
-#include <omp.h>
-#include <cmath>
 
-double fi(double x, double y)
+#include <experimental/filesystem>
+
+using std::experimental::filesystem::create_directory;
+using std::experimental::filesystem::remove_all;
+
+void makeCSV(float **u, size_t X, size_t Y, float t, size_t N);
+float **makeArray2D(size_t rows, size_t cols);
+void freeArray2D(float **array2D, size_t rows, size_t cols);
+
+float fi(float x, float y)
 {
-    return -std::sqrt(x*x+y*y)+1;
+    float e = 0.1;
+    float _x = 0.5;
+    float _y = 0.4;
+    if ((_x - e <= x && _x + e >= x) && (_y - e <= y && _y + e >= y))
+        return 0.1;
+    return 0;
 }
 
-double conditions(double x, double y, double t)
+int main(int argc, char *argv[])
 {
-    // double e = 0.0000000001;
-    // if (1 - e <= y && 1 + e >= y)
-    //     return x;
-    // if (1 - e <= x && 1 + e >= x)
-    //     return y * y;
-    // if (-e <= y && e >= y)
-    //     return 0;
-    // if (-e <= x && e >= x)
-        return 0;
-}
+    remove_all("res");
+    create_directory("res");
 
-double fillCondi(double **u, size_t X, size_t Y, double t)
-{
-    double hX = 1.0 / X;
-    double hY = 1.0 / Y;
-#pragma omp parallel for
-    for (size_t i = 1; i < Y - 1; i++)
+    const float xmax = 1.0;
+    const float ymax = 1.0;
+
+    float tau = 0.1;
+    float tmax = 5.0;
+    float h = 0.1;
+    float c = 1.0;
+
+    int opt;
+    while ((opt = getopt(argc, argv, "t:d:h:c:")) != -1)
     {
-        u[i][0] = conditions(0, i * hY, t);
-        u[i][X - 1] = conditions(1, i * hY, t);
+        switch (opt)
+        {
+        case 't':
+        {
+            tmax = std::atof(optarg);
+            break;
+        }
+        case 'd':
+        {
+            tau = std::atof(optarg);
+            break;
+        }
+        case 'h':
+        {
+            h = std::atof(optarg);
+            break;
+        }
+        case 'c':
+        {
+            c = std::atof(optarg);
+            break;
+        }
+        default:
+            break;
+        }
     }
-#pragma omp parallel for
-    for (size_t i = 0; i < X; i++)
+
+    int N = (int)(xmax / h);
+
+    float r = (c * c * tau * tau) / (h * h);
+
+    float **U = makeArray2D(N, N);
+    float **oldU = makeArray2D(N, N);
+    float **futureU = makeArray2D(N, N);
+
+#pragma omp for schedule(static)
+    for (int i = 0; i < N; i++)
+        for (int j = 0; j < N; j++)
+        {
+            // Начальное и граничное условие = 0
+            oldU[i][j] = fi((i + 1) * h, (j + 1) * h);
+
+            U[i][j] = 0.0;
+            futureU[i][j] = 0.0;
+        }
+
+    makeCSV(oldU, N, N, 0, 0);
+
+    // 1 tau
+    for (int i = 1; i < N - 1; i++)
+        for (int j = 1; j < N - 1; j++)
+            U[i][j] = oldU[i][j] + 0.5 * r * (oldU[i - 1][j] + oldU[i + 1][j] + oldU[i][j - 1] + oldU[i][j + 1] - 4.0 * oldU[i][j]);
+
+    makeCSV(U, N, N, tau, 1);
+
+    size_t counter = 2;
+    // next tau
+    for (float t = 2 * tau; t <= tmax; t += tau)
     {
-        u[0][i] = conditions(i * hX, 0, t);
-        u[Y - 1][i] = conditions(i * hX, 1, t);
+#pragma omp for schedule(static)
+        for (int i = 1; i < N - 1; i++)
+            for (int j = 1; j < N - 1; j++)
+                futureU[i][j] = 2.0 * U[i][j] - oldU[i][j] + r * (U[i - 1][j] + U[i + 1][j] + U[i][j - 1] + U[i][j + 1] - 4.0 * U[i][j]);
+
+#pragma omp for schedule(static)
+        for (int i = 1; i < N - 1; i++)
+            for (int j = 1; j < N - 1; j++)
+            {
+                oldU[i][j] = U[i][j];
+                U[i][j] = futureU[i][j];
+            }
+
+        makeCSV(U, N, N, tau * counter, counter);
+        counter++;
     }
+
+    freeArray2D(oldU, N, N);
+    freeArray2D(U, N, N);
+    freeArray2D(futureU, N, N);
+
+    return 0;
 }
 
-void makeCSV(double **u, size_t X, size_t Y, double t, size_t N)
+void makeCSV(float **u, size_t X, size_t Y, float t, size_t N)
 {
     std::ofstream outStream("res/" + std::to_string(N) + ".txt", std::ios_base::out);
     outStream << t << "\n";
@@ -60,135 +139,19 @@ void makeCSV(double **u, size_t X, size_t Y, double t, size_t N)
     outStream.close();
 }
 
-int main(int argc, char *argv[])
+float **makeArray2D(size_t rows, size_t cols)
 {
-    size_t T = 1;
-    size_t nT = 10;
-    size_t X = 100;
-    size_t Y = 100;
+    float *data = new float[rows * cols];
+    float **array2D = new float *[rows];
 
-    double C = 1;
-    bool write_file = false;
+    for (size_t i = 0; i < rows; ++i)
+        array2D[i] = &(data[i * cols]);
 
-    int opt;
-    while ((opt = getopt(argc, argv, "t:n:x:y:l")) != -1)
-    {
-        switch (opt)
-        {
-        case 't':
-        {
-            T = std::atol(optarg);
-            break;
-        }
-        case 'n':
-        {
-            nT = std::atol(optarg);
-            break;
-        }
-        case 'x':
-        {
-            X = std::atol(optarg);
-            break;
-        }
-        case 'y':
-        {
-            Y = std::atol(optarg);
-            break;
-        }
-        case 'l':
-        {
-            write_file = true;
-            break;
-        }
-        default:
-            break;
-        }
-    }
+    return array2D;
+}
 
-    double hX = 0.01 / X;
-    double hY = 0.01 / Y;
-
-    // Выделение памяти
-    double ***u = new double **[nT + 1];
-    for (size_t iT = 0; iT < nT + 1; iT++)
-    {
-        u[iT] = new double *[Y];
-        for (size_t i = 0; i < Y; i++)
-            u[iT][i] = new double[X];
-    }
-
-    double t = (double)T / (double)nT;
-    double g1 = std::pow(C * t / hX, 2)*0.5;
-    double g2 = std::pow(C * t / hY, 2)*0.5;
-
-    double l1 = std::pow(hX*hY,2);
-    double l2 = std::pow(hX*t,2);
-    double l3 = std::pow(hY*t,2);
-
-
-
-
-    auto begTime = std::chrono::steady_clock::now();
-
-    // Начальное условие
-#pragma omp parallel for
-    for (size_t i = 1; i < Y - 1; i++)
-        for (size_t j = 1; j < X - 1; j++)
-            u[0][i][j] = fi(j * hX, i * hY);
-
-    // Граничные условия
-    fillCondi(u[0], X, Y, 0);
-
-
-
-    // Вычисление u_1
-#pragma omp parallel for
-    for (size_t i = 1; i < Y - 1; i++)
-            for (size_t j = 1; j < X - 1; j++)
-                // u[1][i][j] = u[0][i][j] + g1/2 * (u[0][i][j + 1] + u[0][i][j - 1]) + g2 * (u[0][i + 1][j] + u[0][i - 1][j]);
-                u[1][i][j]= u[0][i][j] +g1*(u[0][i+1][j] -2*u[0][i][j] +u[0][i-1][j]) + g2*(u[0][i][j+1] -2*u[0][i][j] +u[0][i][j-1]);
-     
-                
-
-
-    for (size_t iT = 2; iT < nT + 1; iT++)
-    {
-#pragma omp parallel for
-        for (size_t i = 1; i < Y - 1; i++)
-            for (size_t j = 1; j < X - 1; j++)
-            {
-                // u[iT][i][j] = 2*u[iT - 1][i][j] - u[iT - 2][i][j]+ g1 * (u[iT - 1][i][j + 1] -2*u[iT - 1][i][j]+ u[iT - 1][i][j - 1]) + g2 * (u[iT - 1][i + 1][j] -2*u[iT - 1][i][j]+ u[iT - 1][i - 1][j]);
-                u[iT][i][j]= l1*(2*u[iT-1][i][j]-u[iT-2][i][j]) +l2*(u[iT-1][i+1][j] -2*u[iT-1][i][j] +u[iT-1][i-1][j]) +l3*(u[iT-1][i][j+1] -2*u[iT-1][i][j] +u[iT-1][i][j-1]);
-                u[iT][i][j] = u[iT][i][j]/l1;
-            }
-
-        // Граничные условия
-        fillCondi(u[iT], X, Y, t * iT);
-    }
-
-    double calc_time = std::chrono::duration_cast<std::chrono::duration<double>>(std::chrono::steady_clock::now() - begTime).count();
-
-    std::cout << omp_get_max_threads() << " " << calc_time << std::endl;
-
-    // вывод решения в файл
-    if (write_file)
-    {
-        std::experimental::filesystem::remove_all("res");
-        std::experimental::filesystem::create_directory("res");
-        for (size_t iT = 0; iT < nT + 1; iT++)
-        {
-            makeCSV(u[iT], X, Y, t * iT, iT);
-        }
-    }
-
-    // Освобождение памяти
-    for (size_t iT = 0; iT < nT + 1; iT++)
-    {
-        for (size_t i = 0; i < Y; i++)
-            delete[] u[iT][i];
-        delete[] u[iT];
-    }
-    delete[] u;
-
-    return 0;
+void freeArray2D(float **array2D, size_t rows, size_t cols)
+{
+    delete[] & (array2D[0][0]);
+    delete[] array2D;
 }
