@@ -15,7 +15,7 @@ void freeArray2D(float **array2D, size_t rows, size_t cols);
 
 float fi(float x, float y)
 {
-    float e = 0.1;
+    float e = 0.05;
     float _x = 0.5;
     float _y = 0.4;
     if ((_x - e <= x && _x + e >= x) && (_y - e <= y && _y + e >= y))

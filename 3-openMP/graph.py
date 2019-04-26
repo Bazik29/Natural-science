@@ -31,15 +31,9 @@ def update_plot(frm, data, plot):
 
 
 if __name__ == "__main__":
-    if os.path.exists("plots"):
-        shutil.rmtree("plots")
-
-    os.mkdir("plots")
-
     FOLDERNAME = 'res/{}.txt'
     GIFPATH = 'plots/result.gif'
-    SHOWWINDOW = True
-    SAVEGIF = False
+    SAVE = True
     DELAY = 10  # default 200 as milliseconds
 
     N = len(glob.glob(FOLDERNAME.format('*')))
@@ -52,7 +46,11 @@ if __name__ == "__main__":
     gif=animation.FuncAnimation(fig, update_plot, len(
         data), fargs=(data, plot), interval=DELAY)
 
-    if SHOWWINDOW:
-        plt.show()
-    if SAVEGIF:
+    plt.show()
+
+    if SAVE:
+        if os.path.exists("plots"):
+            shutil.rmtree("plots")
+        os.mkdir("plots")
+
         gif.save(GIFPATH, writer='pillow', fps=len(data))
